@@ -9,6 +9,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/socket.io-client@4.5.4/dist/socket.io.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/plotly.js-dist@2.26.0/plotly.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body {
@@ -106,25 +107,43 @@
             const [inputApiKey, setInputApiKey] = useState('');
             const [inputAppKey, setInputAppKey] = useState('');
             const [inputMacAddress, setInputMacAddress] = useState('');
+            const [inputPassword, setInputPassword] = useState('weather');
+            const [sharePassword, setSharePassword] = useState('weather');
             const wsRef = useRef(null);
             const plotRef = useRef(null);
             const dataBuffer = useRef([]);
 
-            // Simple encryption/decryption functions (client-side only)
-            const encryptCredentials = (apiKey, appKey, mac) => {
-                const data = JSON.stringify({ apiKey, appKey, mac });
-                return btoa(data).replace(/[+/=]/g, (char) => {
-                    return { '+': '-', '/': '_', '=': '' }[char];
-                });
+            // AES encryption/decryption functions with password
+            const encryptCredentials = (apiKey, appKey, mac, password = 'weather') => {
+                try {
+                    const data = JSON.stringify({ apiKey, appKey, mac });
+                    const encrypted = CryptoJS.AES.encrypt(data, password).toString();
+                    // Make URL-safe
+                    return encrypted.replace(/[+/=]/g, (char) => {
+                        return { '+': '-', '/': '_', '=': '' }[char];
+                    });
+                } catch (error) {
+                    console.error('Failed to encrypt credentials:', error);
+                    return null;
+                }
             };
 
-            const decryptCredentials = (encrypted) => {
+            const decryptCredentials = (encrypted, password = 'weather') => {
                 try {
+                    // Convert from URL-safe back to base64
                     const base64 = encrypted.replace(/[-_]/g, (char) => {
                         return { '-': '+', '_': '/' }[char];
                     });
                     const padding = '='.repeat((4 - base64.length % 4) % 4);
-                    const data = atob(base64 + padding);
+                    const encryptedData = base64 + padding;
+                    
+                    const decrypted = CryptoJS.AES.decrypt(encryptedData, password);
+                    const data = decrypted.toString(CryptoJS.enc.Utf8);
+                    
+                    if (!data) {
+                        throw new Error('Invalid password or corrupted data');
+                    }
+                    
                     return JSON.parse(data);
                 } catch (error) {
                     console.error('Failed to decrypt credentials:', error);
@@ -142,13 +161,32 @@
                 
                 // Check for encrypted credentials first
                 if (encryptedCreds) {
-                    const decrypted = decryptCredentials(encryptedCreds);
+                    // Try with default password first
+                    let decrypted = decryptCredentials(encryptedCreds, 'weather');
+                    
                     if (decrypted && decrypted.apiKey && decrypted.appKey && decrypted.mac) {
                         setApiKey(decrypted.apiKey);
                         setAppKey(decrypted.appKey);
                         setMacAddress(decrypted.mac);
+                        setSharePassword('weather');
                         setIsAuthenticated(true);
                         return;
+                    } else {
+                        // If default password fails, prompt for password
+                        const userPassword = prompt('Enter the password to decrypt the credentials:');
+                        if (userPassword) {
+                            decrypted = decryptCredentials(encryptedCreds, userPassword);
+                            if (decrypted && decrypted.apiKey && decrypted.appKey && decrypted.mac) {
+                                setApiKey(decrypted.apiKey);
+                                setAppKey(decrypted.appKey);
+                                setMacAddress(decrypted.mac);
+                                setSharePassword(userPassword);
+                                setIsAuthenticated(true);
+                                return;
+                            } else {
+                                alert('Invalid password or corrupted data');
+                            }
+                        }
                     }
                 }
                 
@@ -308,7 +346,7 @@
             const handleLogin = (e) => {
                 e.preventDefault();
                 
-                if (!inputApiKey || !inputAppKey || !inputMacAddress) {
+                if (!inputApiKey || !inputAppKey || !inputMacAddress || !inputPassword) {
                     alert('Please fill in all fields');
                     return;
                 }
@@ -316,17 +354,23 @@
                 setApiKey(inputApiKey);
                 setAppKey(inputAppKey);
                 setMacAddress(inputMacAddress);
+                setSharePassword(inputPassword);
                 setIsAuthenticated(true);
                 
-                // Update URL with encrypted credentials
-                const encryptedCreds = encryptCredentials(inputApiKey, inputAppKey, inputMacAddress);
-                const newUrl = `${window.location.pathname}?creds=${encryptedCreds}`;
-                window.history.pushState({}, '', newUrl);
+                // Update URL with encrypted credentials using the password
+                const encryptedCreds = encryptCredentials(inputApiKey, inputAppKey, inputMacAddress, inputPassword);
+                if (encryptedCreds) {
+                    const newUrl = `${window.location.pathname}?creds=${encryptedCreds}`;
+                    window.history.pushState({}, '', newUrl);
+                } else {
+                    alert('Failed to encrypt credentials');
+                }
             };
 
             const generateShareableLink = () => {
                 if (!apiKey || !appKey || !macAddress) return '';
-                const encryptedCreds = encryptCredentials(apiKey, appKey, macAddress);
+                const encryptedCreds = encryptCredentials(apiKey, appKey, macAddress, sharePassword);
+                if (!encryptedCreds) return '';
                 return `${window.location.origin}${window.location.pathname}?creds=${encryptedCreds}`;
             };
 
@@ -420,6 +464,24 @@
                                     />
                                 </div>
                                 
+                                <div>
+                                    <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-2">
+                                        Encryption Password
+                                    </label>
+                                    <input
+                                        type="password"
+                                        id="password"
+                                        value={inputPassword}
+                                        onChange={(e) => setInputPassword(e.target.value)}
+                                        className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        placeholder="Password for encrypting shareable links"
+                                        required
+                                    />
+                                    <p className="text-xs text-gray-500 mt-1">
+                                        Used to encrypt/decrypt your credentials in shareable URLs
+                                    </p>
+                                </div>
+                                
                                 <button
                                     type="submit"
                                     className="w-full bg-blue-600 text-white py-3 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 font-semibold transition-colors"
@@ -430,10 +492,10 @@
                             
                             <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
                                 <p className="text-sm text-blue-800">
-                                    <strong>Shareable Links:</strong> After logging in, you can generate a secure shareable link that encrypts your credentials in the URL.
+                                    <strong>Secure Shareable Links:</strong> Your credentials will be encrypted using AES encryption with your custom password.
                                 </p>
                                 <p className="text-xs text-blue-600 mt-2">
-                                    This allows you to share the dashboard without exposing your API keys.
+                                    Recipients will need the same password to decrypt and access the dashboard. Default password is "weather".
                                 </p>
                             </div>
                         </div>
