@@ -1,0 +1,1007 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ambient Weather WS-2902 Dashboard</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/socket.io-client@4.5.4/dist/socket.io.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/plotly.js-dist@2.26.0/plotly.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+                'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // Lucide React icons as SVG components
+        const Wifi = ({ className }) => (
+            <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0" />
+            </svg>
+        );
+
+        const WifiOff = ({ className }) => (
+            <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3l18 18M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071a9 9 0 013.0-2.0M1.394 9.393a15.65 15.65 0 014.0-2.8m8.212.8a15.65 15.65 0 014 2.8" />
+            </svg>
+        );
+
+        const Thermometer = ({ className }) => (
+            <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
+        );
+
+        const Droplets = ({ className }) => (
+            <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707" />
+            </svg>
+        );
+
+        const Wind = ({ className }) => (
+            <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h1m4 0h1m-6 4h8m-8 4h8" />
+            </svg>
+        );
+
+        const Sun = ({ className }) => (
+            <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+            </svg>
+        );
+
+        const Gauge = ({ className }) => (
+            <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+        );
+
+        const CloudRain = ({ className }) => (
+            <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h18M3 12h18M3 21h18" />
+            </svg>
+        );
+
+        const Eye = ({ className }) => (
+            <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+            </svg>
+        );
+
+        const AmbientWeatherDashboard = () => {
+            const [weatherData, setWeatherData] = useState(null);
+            const [connected, setConnected] = useState(false);
+            const [error, setError] = useState(null);
+            const [lastUpdate, setLastUpdate] = useState(null);
+            const [units, setUnits] = useState('imperial');
+            const [activeTab, setActiveTab] = useState('live');
+            const [historicalData, setHistoricalData] = useState([]);
+            const [loadingHistory, setLoadingHistory] = useState(false);
+            const [historyDays, setHistoryDays] = useState(1);
+            const [selectedMetrics, setSelectedMetrics] = useState({
+                temperature: true,
+                humidity: true,
+                windSpeed: false,
+                pressure: false,
+                rain: false,
+                uv: false,
+                solarRadiation: false
+            });
+            const [isAuthenticated, setIsAuthenticated] = useState(false);
+            const [apiKey, setApiKey] = useState('');
+            const [appKey, setAppKey] = useState('');
+            const [macAddress, setMacAddress] = useState('');
+            const [inputApiKey, setInputApiKey] = useState('');
+            const [inputAppKey, setInputAppKey] = useState('');
+            const [inputMacAddress, setInputMacAddress] = useState('');
+            const wsRef = useRef(null);
+            const plotRef = useRef(null);
+            const dataBuffer = useRef([]);
+
+            // Check for API keys in URL parameters on mount
+            useEffect(() => {
+                const urlParams = new URLSearchParams(window.location.search);
+                const urlApiKey = urlParams.get('apiKey');
+                const urlAppKey = urlParams.get('appKey');
+                const urlMac = urlParams.get('mac');
+                
+                if (urlApiKey && urlAppKey && urlMac) {
+                    setApiKey(urlApiKey);
+                    setAppKey(urlAppKey);
+                    setMacAddress(urlMac);
+                    setIsAuthenticated(true);
+                }
+            }, []);
+
+            // Your API credentials
+            const API_KEY = apiKey;
+            const APP_KEY = appKey;
+            const MAC_ADDRESS = macAddress;
+
+            useEffect(() => {
+                if (isAuthenticated && API_KEY && APP_KEY) {
+                    connectWebSocket();
+                }
+                
+                return () => {
+                    if (wsRef.current) {
+                        wsRef.current.disconnect();
+                    }
+                };
+            }, [isAuthenticated, API_KEY, APP_KEY]);
+
+            useEffect(() => {
+                if (activeTab === 'history' && historicalData.length === 0) {
+                    fetchHistoricalData();
+                }
+            }, [activeTab]);
+
+            useEffect(() => {
+                if (activeTab === 'history' && historicalData.length > 0) {
+                    updatePlot();
+                }
+            }, [historicalData, selectedMetrics, units, historyDays]);
+
+            const connectWebSocket = () => {
+                try {
+                    // Ambient Weather uses Socket.IO, not raw WebSockets
+                    const socket = io(`https://rt2.ambientweather.net`, {
+                        transports: ['websocket', 'polling'],
+                        query: {
+                            api: 1,
+                            applicationKey: APP_KEY
+                        }
+                    });
+                    
+                    wsRef.current = socket;
+
+                    socket.on('connect', () => {
+                        console.log('Socket.IO connected');
+                        setConnected(true);
+                        setError(null);
+                        
+                        // Subscribe to your API key
+                        socket.emit('subscribe', { apiKeys: [API_KEY] });
+                    });
+
+                    socket.on('subscribed', (data) => {
+                        console.log('Subscribed to devices:', data);
+                        if (data.devices && data.devices.length > 0) {
+                            const device = data.devices[0];
+                            if (device.lastData) {
+                                setWeatherData(device.lastData);
+                                setLastUpdate(new Date(device.lastData.dateutc || device.lastData.date));
+                                
+                                // Add to history buffer
+                                const newData = { ...device.lastData, timestamp: new Date(device.lastData.dateutc || device.lastData.date) };
+                                dataBuffer.current = [newData, ...dataBuffer.current].slice(0, 1000);
+                            }
+                        }
+                    });
+                    
+                    socket.on('data', (data) => {
+                        console.log('New weather data:', data);
+                        setWeatherData(data);
+                        const timestamp = new Date(data.dateutc || data.date || Date.now());
+                        setLastUpdate(timestamp);
+                        
+                        // Add to history buffer (keep last 1000 readings)
+                        const newData = { ...data, timestamp };
+                        dataBuffer.current = [newData, ...dataBuffer.current].slice(0, 1000);
+                        
+                        // Update historical data if on history tab
+                        if (activeTab === 'history') {
+                            setHistoricalData([...dataBuffer.current]);
+                        }
+                    });
+
+                    socket.on('connect_error', (err) => {
+                        console.error('Socket.IO connection error:', err);
+                        setError('Connection error: ' + err.message);
+                        setConnected(false);
+                    });
+
+                    socket.on('disconnect', (reason) => {
+                        console.log('Socket.IO disconnected:', reason);
+                        setConnected(false);
+                        
+                        // Socket.IO will automatically try to reconnect
+                    });
+                } catch (err) {
+                    console.error('Error connecting to Socket.IO:', err);
+                    setError(err.message);
+                }
+            };
+
+            const MetricCard = ({ title, value, unit, icon: Icon, color }) => (
+                <div className="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow">
+                    <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-gray-600 text-sm font-medium">{title}</h3>
+                        <Icon className={`w-6 h-6 ${color}`} />
+                    </div>
+                    <div className="flex items-baseline">
+                        <span className="text-3xl font-bold text-gray-900">{value}</span>
+                        {unit && <span className="ml-2 text-gray-500">{unit}</span>}
+                    </div>
+                </div>
+            );
+
+            const LargeMetricCard = ({ title, value, unit, icon: Icon, color, subtitle }) => (
+                <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg shadow-lg p-8 col-span-2">
+                    <div className="flex items-center justify-between mb-6">
+                        <h2 className="text-gray-700 text-lg font-semibold">{title}</h2>
+                        <Icon className={`w-10 h-10 ${color}`} />
+                    </div>
+                    <div className="flex items-baseline mb-2">
+                        <span className="text-5xl font-bold text-gray-900">{value}</span>
+                        {unit && <span className="ml-3 text-2xl text-gray-600">{unit}</span>}
+                    </div>
+                    {subtitle && <p className="text-gray-600 text-sm">{subtitle}</p>}
+                </div>
+            );
+
+            const getWindDirection = (degrees) => {
+                const directions = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
+                const index = Math.round(degrees / 22.5) % 16;
+                return directions[index];
+            };
+
+            const getUVLevel = (uv) => {
+                if (uv <= 2) return 'Low';
+                if (uv <= 5) return 'Moderate';
+                if (uv <= 7) return 'High';
+                if (uv <= 10) return 'Very High';
+                return 'Extreme';
+            };
+
+            // Login screen
+            if (!isAuthenticated) {
+                return (
+                    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
+                        <div className="bg-white rounded-lg shadow-xl p-8 max-w-md w-full">
+                            <div className="text-center mb-8">
+                                <h1 className="text-3xl font-bold text-gray-900 mb-2">Weather Dashboard</h1>
+                                <p className="text-gray-600">Ambient Weather WS-2902</p>
+                            </div>
+                            
+                            <form onSubmit={handleLogin} className="space-y-6">
+                                <div>
+                                    <label htmlFor="apiKey" className="block text-sm font-medium text-gray-700 mb-2">
+                                        API Key
+                                    </label>
+                                    <input
+                                        type="text"
+                                        id="apiKey"
+                                        value={inputApiKey}
+                                        onChange={(e) => setInputApiKey(e.target.value)}
+                                        className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        placeholder="Enter your API Key"
+                                        required
+                                    />
+                                </div>
+                                
+                                <div>
+                                    <label htmlFor="appKey" className="block text-sm font-medium text-gray-700 mb-2">
+                                        Application Key
+                                    </label>
+                                    <input
+                                        type="text"
+                                        id="appKey"
+                                        value={inputAppKey}
+                                        onChange={(e) => setInputAppKey(e.target.value)}
+                                        className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        placeholder="Enter your Application Key"
+                                        required
+                                    />
+                                </div>
+                                
+                                <div>
+                                    <label htmlFor="macAddress" className="block text-sm font-medium text-gray-700 mb-2">
+                                        Device MAC Address
+                                    </label>
+                                    <input
+                                        type="text"
+                                        id="macAddress"
+                                        value={inputMacAddress}
+                                        onChange={(e) => setInputMacAddress(e.target.value)}
+                                        className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        placeholder="XX:XX:XX:XX:XX:XX"
+                                        required
+                                    />
+                                </div>
+                                
+                                <button
+                                    type="submit"
+                                    className="w-full bg-blue-600 text-white py-3 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 font-semibold transition-colors"
+                                >
+                                    Connect to Dashboard
+                                </button>
+                            </form>
+                            
+                            <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                                <p className="text-sm text-blue-800">
+                                    <strong>Tip:</strong> You can also access the dashboard directly with URL parameters:
+                                </p>
+                                <code className="text-xs text-blue-600 block mt-2 break-all">
+                                    ?apiKey=YOUR_KEY&appKey=YOUR_APP_KEY&mac=YOUR_MAC
+                                </code>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            const handleLogin = (e) => {
+                e.preventDefault();
+                
+                if (!inputApiKey || !inputAppKey || !inputMacAddress) {
+                    alert('Please fill in all fields');
+                    return;
+                }
+                
+                setApiKey(inputApiKey);
+                setAppKey(inputAppKey);
+                setMacAddress(inputMacAddress);
+                setIsAuthenticated(true);
+                
+                // Update URL with parameters (optional, for easy bookmarking)
+                const newUrl = `${window.location.pathname}?apiKey=${encodeURIComponent(inputApiKey)}&appKey=${encodeURIComponent(inputAppKey)}&mac=${encodeURIComponent(inputMacAddress)}`;
+                window.history.pushState({}, '', newUrl);
+            };
+
+            const handleLogout = () => {
+                setIsAuthenticated(false);
+                setApiKey('');
+                setAppKey('');
+                setMacAddress('');
+                setWeatherData(null);
+                setHistoricalData([]);
+                dataBuffer.current = [];
+                
+                if (wsRef.current) {
+                    wsRef.current.disconnect();
+                }
+                
+                // Clear URL parameters
+                window.history.pushState({}, '', window.location.pathname);
+            };
+
+            // Unit conversion functions
+            const convertTemp = (tempF) => {
+                if (!tempF) return null;
+                return units === 'imperial' ? tempF : ((tempF - 32) * 5/9);
+            };
+
+            const convertSpeed = (mph) => {
+                if (!mph) return null;
+                return units === 'imperial' ? mph : (mph * 1.60934);
+            };
+
+            const convertPressure = (inHg) => {
+                if (!inHg) return null;
+                return units === 'imperial' ? inHg : (inHg * 33.8639);
+            };
+
+            const convertRain = (inches) => {
+                if (!inches) return null;
+                return units === 'imperial' ? inches : (inches * 25.4);
+            };
+
+            const getTempUnit = () => units === 'imperial' ? '°F' : '°C';
+            const getSpeedUnit = () => units === 'imperial' ? 'mph' : 'km/h';
+            const getPressureUnit = () => units === 'imperial' ? 'inHg' : 'mb';
+            const getRainUnit = () => units === 'imperial' ? 'in' : 'mm';
+
+            const fetchHistoricalData = async () => {
+                setLoadingHistory(true);
+                setError(null);
+                
+                try {
+                    console.log('Fetching historical data for MAC:', MAC_ADDRESS);
+                    
+                    // Use CORS proxy to bypass browser restrictions
+                    const corsProxy = 'https://corsproxy.io/?';
+                    const apiUrl = `https://api.ambientweather.net/v1/devices/${MAC_ADDRESS}?applicationKey=${APP_KEY}&apiKey=${API_KEY}&limit=288`;
+                    
+                    const historyResponse = await fetch(corsProxy + encodeURIComponent(apiUrl));
+                    
+                    if (!historyResponse.ok) {
+                        throw new Error(`Failed to fetch historical data: ${historyResponse.status}`);
+                    }
+                    
+                    const histData = await historyResponse.json();
+                    console.log('Historical data received:', histData.length, 'records');
+                    
+                    // Convert to our format with timestamps
+                    const formattedData = histData.map(d => ({
+                        ...d,
+                        timestamp: new Date(d.dateutc || d.date)
+                    }));
+                    
+                    // Merge with buffered data and remove duplicates
+                    const allData = [...formattedData, ...dataBuffer.current];
+                    const uniqueData = Array.from(
+                        new Map(allData.map(item => [item.dateutc || item.date, item])).values()
+                    ).sort((a, b) => b.timestamp - a.timestamp);
+                    
+                    dataBuffer.current = uniqueData.slice(0, 1000);
+                    setHistoricalData(uniqueData);
+                    
+                    console.log('Total unique records:', uniqueData.length);
+                } catch (err) {
+                    console.error('Error fetching historical data:', err);
+                    setError(err.message);
+                    
+                    // Fall back to buffered data if available
+                    if (dataBuffer.current.length > 0) {
+                        console.log('Using buffered data instead');
+                        setHistoricalData([...dataBuffer.current]);
+                    }
+                } finally {
+                    setLoadingHistory(false);
+                }
+            };
+
+            const toggleMetric = (metric) => {
+                setSelectedMetrics(prev => ({
+                    ...prev,
+                    [metric]: !prev[metric]
+                }));
+            };
+
+            const updatePlot = () => {
+                if (!plotRef.current || historicalData.length === 0) return;
+
+                const cutoffDate = new Date();
+                cutoffDate.setDate(cutoffDate.getDate() - historyDays);
+                
+                const filteredData = historicalData.filter(d => {
+                    const dataDate = d.timestamp || new Date(d.dateutc || d.date);
+                    return dataDate >= cutoffDate;
+                }).reverse();
+
+                const traces = [];
+
+                if (selectedMetrics.temperature) {
+                    traces.push({
+                        x: filteredData.map(d => d.timestamp || new Date(d.dateutc || d.date)),
+                        y: filteredData.map(d => convertTemp(d.tempf)),
+                        name: `Temperature (${getTempUnit()})`,
+                        type: 'scatter',
+                        mode: 'lines',
+                        line: { color: '#ef4444', width: 2 }
+                    });
+                }
+
+                if (selectedMetrics.humidity) {
+                    traces.push({
+                        x: filteredData.map(d => d.timestamp || new Date(d.dateutc || d.date)),
+                        y: filteredData.map(d => d.humidity),
+                        name: 'Humidity (%)',
+                        type: 'scatter',
+                        mode: 'lines',
+                        line: { color: '#3b82f6', width: 2 },
+                        yaxis: 'y2'
+                    });
+                }
+
+                if (selectedMetrics.windSpeed) {
+                    traces.push({
+                        x: filteredData.map(d => d.timestamp || new Date(d.dateutc || d.date)),
+                        y: filteredData.map(d => convertSpeed(d.windspeedmph)),
+                        name: `Wind Speed (${getSpeedUnit()})`,
+                        type: 'scatter',
+                        mode: 'lines',
+                        line: { color: '#06b6d4', width: 2 }
+                    });
+                }
+
+                if (selectedMetrics.pressure) {
+                    traces.push({
+                        x: filteredData.map(d => d.timestamp || new Date(d.dateutc || d.date)),
+                        y: filteredData.map(d => convertPressure(d.baromrelin)),
+                        name: `Pressure (${getPressureUnit()})`,
+                        type: 'scatter',
+                        mode: 'lines',
+                        line: { color: '#a855f7', width: 2 }
+                    });
+                }
+
+                if (selectedMetrics.rain) {
+                    traces.push({
+                        x: filteredData.map(d => d.timestamp || new Date(d.dateutc || d.date)),
+                        y: filteredData.map(d => convertRain(d.dailyrainin)),
+                        name: `Daily Rain (${getRainUnit()})`,
+                        type: 'scatter',
+                        mode: 'lines',
+                        line: { color: '#2563eb', width: 2 }
+                    });
+                }
+
+                if (selectedMetrics.uv) {
+                    traces.push({
+                        x: filteredData.map(d => d.timestamp || new Date(d.dateutc || d.date)),
+                        y: filteredData.map(d => d.uv),
+                        name: 'UV Index',
+                        type: 'scatter',
+                        mode: 'lines',
+                        line: { color: '#f97316', width: 2 }
+                    });
+                }
+
+                if (selectedMetrics.solarRadiation) {
+                    traces.push({
+                        x: filteredData.map(d => d.timestamp || new Date(d.dateutc || d.date)),
+                        y: filteredData.map(d => d.solarradiation),
+                        name: 'Solar Radiation (W/m²)',
+                        type: 'scatter',
+                        mode: 'lines',
+                        line: { color: '#eab308', width: 2 }
+                    });
+                }
+
+                const layout = {
+                    title: 'Weather History',
+                    xaxis: {
+                        title: 'Time',
+                        type: 'date'
+                    },
+                    yaxis: {
+                        title: 'Value'
+                    },
+                    yaxis2: {
+                        title: 'Humidity (%)',
+                        overlaying: 'y',
+                        side: 'right'
+                    },
+                    hovermode: 'x unified',
+                    showlegend: true,
+                    legend: {
+                        x: 0,
+                        y: 1.1,
+                        orientation: 'h'
+                    },
+                    margin: { t: 100 }
+                };
+
+                Plotly.newPlot(plotRef.current, traces, layout, { responsive: true });
+            };
+
+            if (error && !weatherData) {
+                return (
+                    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
+                        <div className="bg-red-50 border border-red-200 rounded-lg p-8 max-w-md">
+                            <h2 className="text-red-800 text-xl font-bold mb-2">Connection Error</h2>
+                            <p className="text-red-600 mb-4">{error}</p>
+                            <p className="text-sm text-gray-600">
+                                Check the browser console for more details. The dashboard will attempt to reconnect automatically.
+                            </p>
+                            <button 
+                                onClick={connectWebSocket}
+                                className="mt-4 bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors"
+                            >
+                                Retry Connection
+                            </button>
+                        </div>
+                    </div>
+                );
+            }
+
+            if (!weatherData) {
+                return (
+                    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
+                        <div className="text-center">
+                            <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                            <p className="text-gray-600 mb-2">Connecting to weather station...</p>
+                            <div className="flex items-center justify-center gap-2 text-sm">
+                                {connected ? (
+                                    <>
+                                        <Wifi className="w-4 h-4 text-green-500" />
+                                        <span className="text-green-600">Connected - Waiting for data</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <WifiOff className="w-4 h-4 text-orange-500" />
+                                        <span className="text-orange-600">Connecting...</span>
+                                    </>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4 md:p-8">
+                    <div className="max-w-7xl mx-auto">
+                        <div className="mb-8">
+                            <div className="flex items-center justify-between flex-wrap gap-4">
+                                <div>
+                                    <h1 className="text-4xl font-bold text-gray-900 mb-2">Weather Station Dashboard</h1>
+                                    <p className="text-gray-600">
+                                        Ambient Weather WS-2902 • {MAC_ADDRESS}
+                                        {lastUpdate && ` • ${lastUpdate.toLocaleString()}`}
+                                    </p>
+                                </div>
+                                <div className="flex items-center gap-4">
+                                    <button
+                                        onClick={handleLogout}
+                                        className="text-sm text-gray-600 hover:text-gray-900 underline"
+                                    >
+                                        Logout
+                                    </button>
+                                    <div className="flex items-center gap-2">
+                                        <label htmlFor="units" className="text-sm font-medium text-gray-700">Units:</label>
+                                        <select 
+                                            id="units"
+                                            value={units} 
+                                            onChange={(e) => setUnits(e.target.value)}
+                                            className="bg-white border border-gray-300 rounded-md px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        >
+                                            <option value="imperial">Imperial</option>
+                                            <option value="metric">Metric</option>
+                                        </select>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        {connected ? (
+                                            <>
+                                                <Wifi className="w-6 h-6 text-green-500" />
+                                                <span className="text-green-600 font-semibold">Live</span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <WifiOff className="w-6 h-6 text-orange-500" />
+                                                <span className="text-orange-600 font-semibold">Reconnecting...</span>
+                                            </>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Tabs */}
+                        <div className="mb-6">
+                            <div className="border-b border-gray-200">
+                                <nav className="-mb-px flex gap-8">
+                                    <button
+                                        onClick={() => setActiveTab('live')}
+                                        className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                                            activeTab === 'live'
+                                                ? 'border-blue-500 text-blue-600'
+                                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                        }`}
+                                    >
+                                        Live Data
+                                    </button>
+                                    <button
+                                        onClick={() => setActiveTab('history')}
+                                        className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                                            activeTab === 'history'
+                                                ? 'border-blue-500 text-blue-600'
+                                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                        }`}
+                                    >
+                                        History
+                                    </button>
+                                </nav>
+                            </div>
+                        </div>
+
+                        {/* Live Data Tab */}
+                        {activeTab === 'live' && (
+                            <>
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+                            <div className="col-span-1 md:col-span-2 lg:col-span-2">
+                                <LargeMetricCard
+                                    title="Outdoor Temperature"
+                                    value={convertTemp(weatherData.tempf)?.toFixed(1) || '--'}
+                                    unit={getTempUnit()}
+                                    icon={Thermometer}
+                                    color="text-red-500"
+                                    subtitle={weatherData.feelsLike ? `Feels like ${convertTemp(weatherData.feelsLike)?.toFixed(1)}${getTempUnit()}` : ''}
+                                />
+                            </div>
+
+                            <MetricCard
+                                title="Humidity"
+                                value={weatherData.humidity || '--'}
+                                unit="%"
+                                icon={Droplets}
+                                color="text-blue-500"
+                            />
+
+                            <MetricCard
+                                title="Indoor Temp"
+                                value={convertTemp(weatherData.tempinf)?.toFixed(1) || '--'}
+                                unit={getTempUnit()}
+                                icon={Thermometer}
+                                color="text-orange-500"
+                            />
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+                            <MetricCard
+                                title="Wind Speed"
+                                value={convertSpeed(weatherData.windspeedmph)?.toFixed(1) || '--'}
+                                unit={getSpeedUnit()}
+                                icon={Wind}
+                                color="text-cyan-500"
+                            />
+
+                            <MetricCard
+                                title="Wind Gust"
+                                value={convertSpeed(weatherData.windgustmph)?.toFixed(1) || '--'}
+                                unit={getSpeedUnit()}
+                                icon={Wind}
+                                color="text-cyan-600"
+                            />
+
+                            <MetricCard
+                                title="Wind Direction"
+                                value={weatherData.winddir !== undefined ? getWindDirection(weatherData.winddir) : '--'}
+                                unit={weatherData.winddir !== undefined ? `${weatherData.winddir}°` : ''}
+                                icon={Wind}
+                                color="text-teal-500"
+                            />
+
+                            <MetricCard
+                                title="Barometric Pressure"
+                                value={convertPressure(weatherData.baromrelin)?.toFixed(2) || '--'}
+                                unit={getPressureUnit()}
+                                icon={Gauge}
+                                color="text-purple-500"
+                            />
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+                            <MetricCard
+                                title="Solar Radiation"
+                                value={weatherData.solarradiation?.toFixed(0) || '--'}
+                                unit="W/m²"
+                                icon={Sun}
+                                color="text-yellow-500"
+                            />
+
+                            <MetricCard
+                                title="UV Index"
+                                value={weatherData.uv || '--'}
+                                unit={weatherData.uv ? getUVLevel(weatherData.uv) : ''}
+                                icon={Sun}
+                                color="text-orange-500"
+                            />
+
+                            <MetricCard
+                                title="Daily Rain"
+                                value={convertRain(weatherData.dailyrainin)?.toFixed(2) || '--'}
+                                unit={getRainUnit()}
+                                icon={CloudRain}
+                                color="text-blue-600"
+                            />
+
+                            <MetricCard
+                                title="Hourly Rain"
+                                value={convertRain(weatherData.hourlyrainin)?.toFixed(2) || '--'}
+                                unit={getRainUnit()}
+                                icon={CloudRain}
+                                color="text-indigo-500"
+                            />
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                            <MetricCard
+                                title="Dew Point"
+                                value={convertTemp(weatherData.dewPoint)?.toFixed(1) || '--'}
+                                unit={getTempUnit()}
+                                icon={Droplets}
+                                color="text-sky-500"
+                            />
+
+                            <MetricCard
+                                title="Indoor Humidity"
+                                value={weatherData.humidityin || '--'}
+                                unit="%"
+                                icon={Droplets}
+                                color="text-blue-400"
+                            />
+
+                            <MetricCard
+                                title="Event Rain"
+                                value={convertRain(weatherData.eventrainin)?.toFixed(2) || '--'}
+                                unit={getRainUnit()}
+                                icon={CloudRain}
+                                color="text-slate-500"
+                            />
+
+                            <MetricCard
+                                title="Battery Status"
+                                value={weatherData.battout === 1 ? 'OK' : 'Low'}
+                                unit=""
+                                icon={Eye}
+                                color={weatherData.battout === 1 ? 'text-green-500' : 'text-red-500'}
+                            />
+                        </div>
+
+                        <div className="mt-8 bg-white rounded-lg shadow-md p-6">
+                            <h3 className="text-lg font-semibold text-gray-900 mb-4">Additional Information</h3>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                                {weatherData.maxdailygust && (
+                                    <div>
+                                        <span className="text-gray-600">Max Daily Gust:</span>
+                                        <span className="ml-2 font-semibold">{convertSpeed(weatherData.maxdailygust)?.toFixed(1)} {getSpeedUnit()}</span>
+                                    </div>
+                                )}
+                                {weatherData.monthlyrainin !== undefined && (
+                                    <div>
+                                        <span className="text-gray-600">Monthly Rain:</span>
+                                        <span className="ml-2 font-semibold">{convertRain(weatherData.monthlyrainin)?.toFixed(2)} {getRainUnit()}</span>
+                                    </div>
+                                )}
+                                {weatherData.yearlyrainin !== undefined && (
+                                    <div>
+                                        <span className="text-gray-600">Yearly Rain:</span>
+                                        <span className="ml-2 font-semibold">{convertRain(weatherData.yearlyrainin)?.toFixed(2)} {getRainUnit()}</span>
+                                    </div>
+                                )}
+                                {weatherData.totalrainin !== undefined && (
+                                    <div>
+                                        <span className="text-gray-600">Total Rain:</span>
+                                        <span className="ml-2 font-semibold">{convertRain(weatherData.totalrainin)?.toFixed(2)} {getRainUnit()}</span>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="mt-6 bg-green-50 border border-green-200 rounded-lg p-6">
+                            <h3 className="text-lg font-semibold text-green-900 mb-2 flex items-center gap-2">
+                                <Wifi className="w-5 h-5" />
+                                Live Socket.IO Connection
+                            </h3>
+                            <p className="text-green-800 text-sm">
+                                This dashboard is connected to your weather station via Socket.IO and receives real-time updates 
+                                as they happen. Data automatically appears when your station transmits new readings (typically every 30-60 seconds).
+                            </p>
+                        </div>
+                    </>
+                )}
+
+                {/* History Tab */}
+                {activeTab === 'history' && (
+                    <div>
+                        <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+                            <div className="flex items-center justify-between flex-wrap gap-4 mb-6">
+                                <h2 className="text-2xl font-bold text-gray-900">Weather History</h2>
+                                <div className="flex items-center gap-4">
+                                    <div className="flex items-center gap-2">
+                                        <label htmlFor="historyDays" className="text-sm font-medium text-gray-700">Time Range:</label>
+                                        <select 
+                                            id="historyDays"
+                                            value={historyDays} 
+                                            onChange={(e) => setHistoryDays(Number(e.target.value))}
+                                            className="bg-white border border-gray-300 rounded-md px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        >
+                                            <option value={1}>Last 24 hours</option>
+                                            <option value={7}>Last 7 days</option>
+                                            <option value={30}>Last 30 days</option>
+                                        </select>
+                                    </div>
+                                    <button
+                                        onClick={fetchHistoricalData}
+                                        disabled={loadingHistory}
+                                        className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        {loadingHistory ? 'Loading...' : 'Refresh Data'}
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="mb-6">
+                                <h3 className="text-sm font-semibold text-gray-700 mb-3">Select Metrics to Display:</h3>
+                                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
+                                    <label className="flex items-center gap-2 cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            checked={selectedMetrics.temperature}
+                                            onChange={() => toggleMetric('temperature')}
+                                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                        />
+                                        <span className="text-sm text-gray-700">Temperature</span>
+                                    </label>
+                                    <label className="flex items-center gap-2 cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            checked={selectedMetrics.humidity}
+                                            onChange={() => toggleMetric('humidity')}
+                                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                        />
+                                        <span className="text-sm text-gray-700">Humidity</span>
+                                    </label>
+                                    <label className="flex items-center gap-2 cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            checked={selectedMetrics.windSpeed}
+                                            onChange={() => toggleMetric('windSpeed')}
+                                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                        />
+                                        <span className="text-sm text-gray-700">Wind Speed</span>
+                                    </label>
+                                    <label className="flex items-center gap-2 cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            checked={selectedMetrics.pressure}
+                                            onChange={() => toggleMetric('pressure')}
+                                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                        />
+                                        <span className="text-sm text-gray-700">Pressure</span>
+                                    </label>
+                                    <label className="flex items-center gap-2 cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            checked={selectedMetrics.rain}
+                                            onChange={() => toggleMetric('rain')}
+                                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                        />
+                                        <span className="text-sm text-gray-700">Rain</span>
+                                    </label>
+                                    <label className="flex items-center gap-2 cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            checked={selectedMetrics.uv}
+                                            onChange={() => toggleMetric('uv')}
+                                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                        />
+                                        <span className="text-sm text-gray-700">UV Index</span>
+                                    </label>
+                                    <label className="flex items-center gap-2 cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            checked={selectedMetrics.solarRadiation}
+                                            onChange={() => toggleMetric('solarRadiation')}
+                                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                        />
+                                        <span className="text-sm text-gray-700">Solar Radiation</span>
+                                    </label>
+                                </div>
+                            </div>
+
+                            {loadingHistory ? (
+                                <div className="flex items-center justify-center py-12">
+                                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+                                </div>
+                            ) : historicalData.length > 0 ? (
+                                <div ref={plotRef} className="w-full" style={{ minHeight: '500px' }}></div>
+                            ) : (
+                                <div className="text-center py-12 text-gray-500">
+                                    <p className="mb-2">No historical data loaded yet.</p>
+                                    <p className="text-sm">Click "Refresh Data" above to load historical data from the API.</p>
+                                    {error && (
+                                        <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm max-w-md mx-auto">
+                                            <p className="font-semibold">Error:</p>
+                                            <p>{error}</p>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
+                    </div>
+                </div>
+            );
+        };
+
+        ReactDOM.render(<AmbientWeatherDashboard />, document.getElementById('root'));
+    </script>
+</body>
+</html>
