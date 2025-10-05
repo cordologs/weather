@@ -150,9 +150,12 @@
 
             useEffect(() => {
                 if (activeTab === 'history' && historicalData.length > 0) {
-                    updatePlot();
+                    // Add a small delay to ensure the plot container is rendered
+                    setTimeout(() => {
+                        updatePlot();
+                    }, 100);
                 }
-            }, [historicalData, selectedMetrics, units, historyDays]);
+            }, [activeTab, historicalData, selectedMetrics, units, historyDays]);
 
             const connectWebSocket = () => {
                 try {
@@ -462,7 +465,13 @@
             };
 
             const updatePlot = () => {
-                if (!plotRef.current || historicalData.length === 0) return;
+                if (!plotRef.current || historicalData.length === 0) {
+                    console.log('updatePlot early return:', { 
+                        plotRef: !!plotRef.current, 
+                        dataLength: historicalData.length 
+                    });
+                    return;
+                }
 
                 const cutoffDate = new Date();
                 cutoffDate.setDate(cutoffDate.getDate() - historyDays);
@@ -576,7 +585,20 @@
                     margin: { t: 100 }
                 };
 
-                Plotly.newPlot(plotRef.current, traces, layout, { responsive: true });
+                // Always call Plotly.newPlot, even with empty traces to clear the plot
+                if (traces.length === 0) {
+                    // Show a message when no metrics are selected
+                    const emptyTrace = {
+                        x: [],
+                        y: [],
+                        type: 'scatter',
+                        mode: 'lines',
+                        name: 'No metrics selected'
+                    };
+                    Plotly.newPlot(plotRef.current, [emptyTrace], layout, { responsive: true });
+                } else {
+                    Plotly.newPlot(plotRef.current, traces, layout, { responsive: true });
+                }
             };
 
             if (error && !weatherData) {
