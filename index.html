@@ -266,6 +266,41 @@
                 return 'Extreme';
             };
 
+            const handleLogin = (e) => {
+                e.preventDefault();
+                
+                if (!inputApiKey || !inputAppKey || !inputMacAddress) {
+                    alert('Please fill in all fields');
+                    return;
+                }
+                
+                setApiKey(inputApiKey);
+                setAppKey(inputAppKey);
+                setMacAddress(inputMacAddress);
+                setIsAuthenticated(true);
+                
+                // Update URL with parameters (optional, for easy bookmarking)
+                const newUrl = `${window.location.pathname}?apiKey=${encodeURIComponent(inputApiKey)}&appKey=${encodeURIComponent(inputAppKey)}&mac=${encodeURIComponent(inputMacAddress)}`;
+                window.history.pushState({}, '', newUrl);
+            };
+
+            const handleLogout = () => {
+                setIsAuthenticated(false);
+                setApiKey('');
+                setAppKey('');
+                setMacAddress('');
+                setWeatherData(null);
+                setHistoricalData([]);
+                dataBuffer.current = [];
+                
+                if (wsRef.current) {
+                    wsRef.current.disconnect();
+                }
+                
+                // Clear URL parameters
+                window.history.pushState({}, '', window.location.pathname);
+            };
+
             // Login screen
             if (!isAuthenticated) {
                 return (
@@ -342,41 +377,6 @@
                     </div>
                 );
             }
-
-            const handleLogin = (e) => {
-                e.preventDefault();
-                
-                if (!inputApiKey || !inputAppKey || !inputMacAddress) {
-                    alert('Please fill in all fields');
-                    return;
-                }
-                
-                setApiKey(inputApiKey);
-                setAppKey(inputAppKey);
-                setMacAddress(inputMacAddress);
-                setIsAuthenticated(true);
-                
-                // Update URL with parameters (optional, for easy bookmarking)
-                const newUrl = `${window.location.pathname}?apiKey=${encodeURIComponent(inputApiKey)}&appKey=${encodeURIComponent(inputAppKey)}&mac=${encodeURIComponent(inputMacAddress)}`;
-                window.history.pushState({}, '', newUrl);
-            };
-
-            const handleLogout = () => {
-                setIsAuthenticated(false);
-                setApiKey('');
-                setAppKey('');
-                setMacAddress('');
-                setWeatherData(null);
-                setHistoricalData([]);
-                dataBuffer.current = [];
-                
-                if (wsRef.current) {
-                    wsRef.current.disconnect();
-                }
-                
-                // Clear URL parameters
-                window.history.pushState({}, '', window.location.pathname);
-            };
 
             // Unit conversion functions
             const convertTemp = (tempF) => {
