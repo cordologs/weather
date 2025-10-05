@@ -110,13 +110,49 @@
             const plotRef = useRef(null);
             const dataBuffer = useRef([]);
 
+            // Simple encryption/decryption functions (client-side only)
+            const encryptCredentials = (apiKey, appKey, mac) => {
+                const data = JSON.stringify({ apiKey, appKey, mac });
+                return btoa(data).replace(/[+/=]/g, (char) => {
+                    return { '+': '-', '/': '_', '=': '' }[char];
+                });
+            };
+
+            const decryptCredentials = (encrypted) => {
+                try {
+                    const base64 = encrypted.replace(/[-_]/g, (char) => {
+                        return { '-': '+', '_': '/' }[char];
+                    });
+                    const padding = '='.repeat((4 - base64.length % 4) % 4);
+                    const data = atob(base64 + padding);
+                    return JSON.parse(data);
+                } catch (error) {
+                    console.error('Failed to decrypt credentials:', error);
+                    return null;
+                }
+            };
+
             // Check for API keys in URL parameters on mount
             useEffect(() => {
                 const urlParams = new URLSearchParams(window.location.search);
                 const urlApiKey = urlParams.get('apiKey');
                 const urlAppKey = urlParams.get('appKey');
                 const urlMac = urlParams.get('mac');
+                const encryptedCreds = urlParams.get('creds');
                 
+                // Check for encrypted credentials first
+                if (encryptedCreds) {
+                    const decrypted = decryptCredentials(encryptedCreds);
+                    if (decrypted && decrypted.apiKey && decrypted.appKey && decrypted.mac) {
+                        setApiKey(decrypted.apiKey);
+                        setAppKey(decrypted.appKey);
+                        setMacAddress(decrypted.mac);
+                        setIsAuthenticated(true);
+                        return;
+                    }
+                }
+                
+                // Fall back to plain text parameters
                 if (urlApiKey && urlAppKey && urlMac) {
                     setApiKey(urlApiKey);
                     setAppKey(urlAppKey);
@@ -282,9 +318,33 @@
                 setMacAddress(inputMacAddress);
                 setIsAuthenticated(true);
                 
-                // Update URL with parameters (optional, for easy bookmarking)
-                const newUrl = `${window.location.pathname}?apiKey=${encodeURIComponent(inputApiKey)}&appKey=${encodeURIComponent(inputAppKey)}&mac=${encodeURIComponent(inputMacAddress)}`;
+                // Update URL with encrypted credentials
+                const encryptedCreds = encryptCredentials(inputApiKey, inputAppKey, inputMacAddress);
+                const newUrl = `${window.location.pathname}?creds=${encryptedCreds}`;
                 window.history.pushState({}, '', newUrl);
+            };
+
+            const generateShareableLink = () => {
+                if (!apiKey || !appKey || !macAddress) return '';
+                const encryptedCreds = encryptCredentials(apiKey, appKey, macAddress);
+                return `${window.location.origin}${window.location.pathname}?creds=${encryptedCreds}`;
+            };
+
+            const copyShareableLink = async () => {
+                const link = generateShareableLink();
+                try {
+                    await navigator.clipboard.writeText(link);
+                    alert('Shareable link copied to clipboard!');
+                } catch (err) {
+                    // Fallback for browsers that don't support clipboard API
+                    const textArea = document.createElement('textarea');
+                    textArea.value = link;
+                    document.body.appendChild(textArea);
+                    textArea.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(textArea);
+                    alert('Shareable link copied to clipboard!');
+                }
             };
 
             const handleLogout = () => {
@@ -370,11 +430,11 @@
                             
                             <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
                                 <p className="text-sm text-blue-800">
-                                    <strong>Tip:</strong> You can also access the dashboard directly with URL parameters:
+                                    <strong>Shareable Links:</strong> After logging in, you can generate a secure shareable link that encrypts your credentials in the URL.
                                 </p>
-                                <code className="text-xs text-blue-600 block mt-2 break-all">
-                                    ?apiKey=YOUR_KEY&appKey=YOUR_APP_KEY&mac=YOUR_MAC
-                                </code>
+                                <p className="text-xs text-blue-600 mt-2">
+                                    This allows you to share the dashboard without exposing your API keys.
+                                </p>
                             </div>
                         </div>
                     </div>
@@ -658,6 +718,12 @@
                                     </p>
                                 </div>
                                 <div className="flex items-center gap-4">
+                                    <button
+                                        onClick={copyShareableLink}
+                                        className="bg-green-600 text-white px-3 py-2 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 text-sm font-medium transition-colors"
+                                    >
+                                        📋 Copy Shareable Link
+                                    </button>
                                     <button
                                         onClick={handleLogout}
                                         className="text-sm text-gray-600 hover:text-gray-900 underline"
